@@ -57,7 +57,7 @@ def collect_data(args):
         storage_path=args.dataset_saving_dir,
     )
     if args.ratio is None:
-        _roll_out(model, args.seed, envs, rollouts, device, args.checkpoint_path, args.num_env_steps)
+        _roll_out(model, args.seed, envs, rollouts, device, args.checkpoint_path, args.total_episodes_per_level)
     else:
         env_dir = os.path.join(
             DEFAULT_CHECKPOINT_DIRECTORY if args.ratio_checkpoint_dir is None else args.ratio_checkpoint_dir,
@@ -83,7 +83,7 @@ def _roll_out(
     rollouts: RolloutStorage,
     device: torch.device,
     checkpoint_path: str,
-    target_env_steps: int,
+    target_episodes: int,
 ):
     set_seed(seed)
 
@@ -96,14 +96,14 @@ def _roll_out(
     # Load checkpoint
     _load_checkpoint(model, checkpoint_path)
     model.to(device)
-    print("\n Neural Network: ", model)
 
     # Roll out the agent and collect Data
     model.eval()
     prev_done_indexes = np.zeros(shape=(envs.num_envs,), dtype=int)
     saved_env_steps = np.zeros(shape=(envs.num_envs,), dtype=int)
     step = 0
-    while sum(saved_env_steps) <= target_env_steps:
+    episodes_count = 0
+    while episodes_count < target_episodes:
         # Sample actions
         with torch.no_grad():
             # Raw obs will be saved in rollout storage, while the model needs normalized obs
@@ -114,13 +114,14 @@ def _roll_out(
         obs, rewards, dones, infos = envs.step(action)
 
         # Store results
-        rollouts.insert(obs, action, rewards, dones, infos)
+        rollouts.insert(obs, action, rewards, dones, infos, episodes_count)
 
         # Calculate saved env steps
         if any(dones):
             done_env_idxs = np.where(dones == 1)[0]
             saved_env_steps[done_env_idxs] += step - prev_done_indexes[done_env_idxs]
             prev_done_indexes[done_env_idxs] = step
+            episodes_count += 1
 
         step += 1
 
@@ -131,6 +132,7 @@ def _load_checkpoint(model: nn.Module, path: str):
     print(f"Loading checkpoint from {checkpoint_path} ...")
     try:
         checkpoint_states = torch.load(checkpoint_path)
+        print("Checkpoint loaded successfully!")
         model.load_state_dict(checkpoint_states[LogItemType.MODEL_STATE_DICT.value])
     except Exception:
         print(f"Unable to load checkpoint from {checkpoint_path}, model is initialized randomly.")

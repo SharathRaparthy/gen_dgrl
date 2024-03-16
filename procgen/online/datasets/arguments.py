@@ -1,9 +1,3 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-
-# This source code is licensed under the license found in the
-# LICENSE file in the root directory of this source tree.
-
 import argparse
 
 from utils.utils import str2bool
@@ -71,3 +65,5 @@ parser.add_argument(
 parser.add_argument("--env_name", type=str, default="coinrun", help="environment to train on")
 parser.add_argument("--num_levels", type=int, default=200, help="number of Procgen levels to use for training")
 parser.add_argument("--start_level", type=int, default=0, help="start level id for sampling Procgen levels")
+parser.add_argument("--total_episodes_per_level", type=int, default=1, help="Number of levels per level")
+

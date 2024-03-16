@@ -1,9 +1,3 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-
-# This source code is licensed under the license found in the
-# LICENSE file in the root directory of this source tree.
-
 import collections
 import datetime
 import io
@@ -142,7 +136,7 @@ class RolloutStorage(object):
         self._done_buffer = self._done_buffer.to(device)
         self._action_buffer = self._action_buffer.to(device)
 
-    def insert(self, obs, actions, rewards, dones, infos=[]) -> None:
+    def insert(self, obs, actions, rewards, dones, infos=[], ep_idx=None) -> None:
         r"""
         Insert tuple of (observations, actions, rewards, dones) into corresponding buffers.
         An 's' at the end of each parameter indicates that the environments can be vectorized.
@@ -185,7 +179,7 @@ class RolloutStorage(object):
         if self.save_episode:
             for env_idx in range(self.n_envs):
                 self.ongoing_episodes[env_idx][DatasetItemType.OBSERVATIONS.value].append(
-                    obs[env_idx].detach().cpu().numpy()
+                    obs[env_idx].detach().cpu().numpy().astype(np.uint8)
                 )
                 self.ongoing_episodes[env_idx][DatasetItemType.ACTIONS.value].append(
                     actions[env_idx].detach().cpu().numpy()
@@ -197,7 +191,7 @@ class RolloutStorage(object):
 
             if any(dones):
                 done_env_idxs = np.where(dones == 1)[0]
-                self._save_terminated_episodes(done_env_idxs)
+                self._save_terminated_episodes(done_env_idxs, ep_idx)
                 self._reset_terminated_episodes(done_env_idxs)
 
         # Update with current level seed after saving completed episodes.
@@ -215,7 +209,7 @@ class RolloutStorage(object):
         """
         return self.action_space.__class__.__name__ == "Discrete"
 
-    def _save_terminated_episodes(self, done_env_idxs: np.ndarray) -> None:
+    def _save_terminated_episodes(self, done_env_idxs: np.ndarray, ep_idx: int) -> None:
         """
         Save all terminated episodes among the n_envs environments.
 
@@ -223,9 +217,9 @@ class RolloutStorage(object):
             done_env_idxs (np.ndarray): indexs of environments having episode terminated at the current step.
         """
         for env_idx in done_env_idxs:
-            self._save_episode(env_idx)
+            self._save_episode(env_idx, ep_idx)
 
-    def _save_episode(self, env_idx: int) -> None:
+    def _save_episode(self, env_idx: int, ep_idx: int) -> None:
         """
         Save a single episode into file.
 
@@ -247,12 +241,12 @@ class RolloutStorage(object):
             episode[k] = np.array(v, dtype=dtype)
 
         # File name
-        episode_idx = self.n_episodes
+        episode_idx = ep_idx
         timestamp = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
         episode_len = len(self.ongoing_episodes[env_idx]["rewards"])
         level_seed = self._level_seeds_buffer[env_idx]
         total_rewards = np.squeeze(sum(self.ongoing_episodes[env_idx]["rewards"]))
-        episode_filename = f"{timestamp}_{episode_idx}_{episode_len}_{level_seed}_{total_rewards:.2f}.npz"
+        episode_filename = f"{level_seed}_{episode_len}_{episode_idx}_{total_rewards:.2f}.npz"
 
         # Store the episode
         self.n_episodes += 1
@@ -281,5 +275,5 @@ class RolloutStorage(object):
         # the next_obs of the previous (saved) terminated episode is the init_obs of the next episode.
         # self._prev_idx has range [1, capacity+1] inclusive, covers the roll over edge cases.
         self.ongoing_episodes[env_idx][DatasetItemType.OBSERVATIONS.value].append(
-            self._obs_buffer[self._prev_idx + 1][env_idx].detach().cpu().numpy()
+            self._obs_buffer[self._prev_idx + 1][env_idx].detach().cpu().numpy().astype(np.uint8)
         )
